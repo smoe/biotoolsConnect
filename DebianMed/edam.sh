@@ -17,21 +17,10 @@ Description:
 EOT
 }
 
-PORT="-p 5452"
-
-SERVICE="service=udd"
-#if there is a local UDD clone just use this
-if psql $PORT -l 2>/dev/null | grep -qw udd ; then
-    SERVICE=udd
-fi
-
-# Check UDD connection
-if ! psql $PORT $SERVICE -c "" 2>/dev/null ; then
-    echo "No local UDD found, use publich mirror."
-    PORT="--port=5432"
-    export PGPASSWORD="public-udd-mirror"
-    SERVICE="--host=public-udd-mirror.xvm.mit.edu --username=public-udd-mirror udd"
-fi
+# default settings for localhost
+PGPORT="5452"
+PGHOST="localhost"
+PGPASSWORD="public-udd-mirror"
 
 EXT=txt
 while getopts "hjm" o; do
@@ -47,9 +36,10 @@ while getopts "hjm" o; do
            OUTPUTFORMAT=--tuples-only
            ;;
         m)
-           PORT="--port=5432"
+           PGPORT="5432"
            export PGPASSWORD="public-udd-mirror"
-           SERVICE="--host=public-udd-mirror.xvm.mit.edu --username=public-udd-mirror udd"
+           PGHOST="public-udd-mirror.xvm.mit.edu"
+           PGUSERNAME="public-udd-mirror"
            ;;
         *)
             usage
@@ -59,9 +49,29 @@ while getopts "hjm" o; do
 done
 shift $((OPTIND-1))
 
+SERVICE="--host=$PGHOST --username=$PGUSERNAME udd"
+
+# Check UDD connection
+if [ $PGHOST != "public-udd-mirror.xvm.mit.edu" ] && ! psql -p $PORT $SERVICE -c "" 2>/dev/null ; then
+    echo "No local UDD found, using public mirror."
+    PGPORT="5432"
+    export PGPASSWORD="public-udd-mirror"
+    PGHOST="public-udd-mirror.xvm.mit.edu"
+    PGUSERNAME="public-udd-mirror"
+    SERVICE="--host=$PGHOST --username=$PGUSERNAME udd"
+fi
+
+if psql -p $PGPORT $SERVICE -c "" 2>/dev/null ; then
+    echo "Successfully connecting to $PGHOST:$PGPORT"
+else
+    echo "E: Could not connect to $PGHOST:$PGPORT" > /dev/stderr
+    exit 1
+fi
+
+
 team="'debian-med-packaging@lists.alioth.debian.org'"
 
-psql $PORT $OUTPUTFORMAT $SERVICE >edam.$EXT <<EOT
+psql -p $PGPORT $OUTPUTFORMAT $SERVICE >edam.$EXT <<EOT
 $JSONBEGIN
 -- If you want to make the output at source level uncomment this
 -- SELECT source, array_agg(package) as packages, distribution, release, component, version, homepage FROM
